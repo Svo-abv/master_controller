@@ -256,9 +256,10 @@ double globalRoomTemp = 24.0;
 double targetRoomTemp = 24.0;
 
  bool enableCentralHeating = false;
-// bool enableHotWater = false;
-// bool enableCooling = true;
-
+ bool enableHotWater = false;
+ bool enableCooling = false;
+ bool enableOTCCompensation = true;
+ 
 unsigned char gasCrash = 0x00;
 
 float targetHCTemp = 60;
@@ -268,6 +269,7 @@ float outside = 0;
 bool isFlame = false;
 float modulation = 0;
 float maxModulation = 0;
+
 
 const int inPin = 13;  //for Arduino, 4 for ESP8266 (D2), 21 for ESP32
 const int outPin = 15; //for Arduino, 5 for ESP8266 (D1), 22 for ESP32
@@ -296,9 +298,8 @@ void communicateBoiler()
         enableCentralHeating = false;
       }
 
-      unsigned long resp1 = ot.setBoilerStatus(enableCentralHeating);
-      
-      
+      unsigned long resp1 = ot.setBoilerStatus(enableCentralHeating, enableHotWater, enableCooling,enableOTCCompensation);
+
       isFlame = ot.isFlameOn(resp1);
 
       // unsigned int data = ot.temperatureToData(24);
@@ -546,18 +547,54 @@ void collect_and_send()
 
   String tempFloors;
 
-  http.begin("http://192.168.0.16/data");
+  http.begin("http://192.168.0.11/data");
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK)
   {
     String payload = http.getString();
     JSONVar floorData = JSON.parse(payload);
-    tempFloors += String("Первый этаж, кухня:\r\n") +
-                 String("Температура: <b>") + String((double)floorData["temperature"]) + "°C</b>\r\n" +
-                 String("Влажность: <b>") + String((double)floorData["humidity"]) + "%</b>\r\n" +
-                 String("Тепловой индекс: <b>") + String((double)floorData["heatIndex"]) + "°C/t</b>\r\n";
+    tempFloors += String("Подвал:\r\n") +
+                  String("Температура: <b>") + String((double)floorData["temperature"]) + "°C</b>\r\n" +
+                  String("Влажность: <b>") + String((double)floorData["humidity"]) + "%</b>\r\n" +
+                  String("Тепловой индекс: <b>") + String((double)floorData["heatIndex"]) + "°C/t</b>\r\n";
+  }
+  else
+  {
+    tempFloors += String("Error, code: ") + String((int)httpCode) + "°C</b>\r\n";
+  }
+  http.end();
+
+  http.begin("http://192.168.0.16/data");
+  httpCode = http.GET();
+  if (httpCode == HTTP_CODE_OK)
+  {
+    String payload = http.getString();
+    JSONVar floorData = JSON.parse(payload);
+    tempFloors += +"-------\r\n" +
+                  String("Первый этаж, кухня:\r\n") +
+                  String("Температура: <b>") + String((double)floorData["temperature"]) + "°C</b>\r\n" +
+                  String("Влажность: <b>") + String((double)floorData["humidity"]) + "%</b>\r\n" +
+                  String("Тепловой индекс: <b>") + String((double)floorData["heatIndex"]) + "°C/t</b>\r\n";
   } else {
     tempFloors += String("Error, code: ") + String((int)httpCode) + "°C</b>\r\n";
+  }
+  http.end();
+
+  http.begin("http://192.168.0.10/data");
+  httpCode = http.GET();
+  if (httpCode == HTTP_CODE_OK)
+  {
+    String payload = http.getString();
+    JSONVar floorData = JSON.parse(payload);
+    tempFloors += +"-------\r\n" +
+                  String("Второй этаж, спальня большая:\r\n") +
+                  String("Температура: <b>") + String((double)floorData["temperature"]) + "°C</b>\r\n" +
+                  String("Влажность: <b>") + String((double)floorData["humidity"]) + "%</b>\r\n" +
+                  String("Тепловой индекс: <b>") + String((double)floorData["heatIndex"]) + "°C/t</b>\r\n";
+  }
+  else
+  {
+    tempFloors = String("Error, code: ") + String((int)httpCode) + "°C</b>\r\n";
   }
   http.end();
 
@@ -872,7 +909,7 @@ void initTimeClient(){
 void initOpenTherm(){
   ot.begin(handleInterrupt);
 
-  unsigned long response = ot.setBoilerStatus(false);
+  unsigned long response = ot.setBoilerStatus(false, false, false, enableOTCCompensation);
   responseStatus = ot.getLastResponseStatus();
   if (responseStatus == OpenThermResponseStatus::SUCCESS)
   {
