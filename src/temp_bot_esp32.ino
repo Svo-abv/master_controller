@@ -259,10 +259,11 @@ double targetRoomTemp = 24.0;
  bool enableHotWater = false;
  bool enableCooling = false;
  bool enableOTCCompensation = true;
- 
+
 unsigned char gasCrash = 0x00;
 
 float targetHCTemp = 60;
+float currentTargetHCTemp = 60;
 float HCTemp = 60;
 float outside = 0;
 
@@ -291,14 +292,39 @@ void communicateBoiler()
 
       if ((targetRoomTemp - 0.2) > globalRoomTemp)
       {
-        enableCentralHeating = true;
+        if (targetHCTemp != currentTargetHCTemp)
+        {
+          targetHCTemp = currentTargetHCTemp;
+          ot.setBoilerTemperature(targetHCTemp);
+        }
       }
       else if (targetRoomTemp < globalRoomTemp)
       {
-        enableCentralHeating = false;
+        if (targetHCTemp != 1)
+        {
+          targetHCTemp = 1;
+          ot.setBoilerTemperature(targetHCTemp);
+        }
       }
 
-      unsigned long resp1 = ot.setBoilerStatus(enableCentralHeating, enableHotWater, enableCooling,enableOTCCompensation);
+      if (HCTemp  > globalRoomTemp + 3)
+      {
+        if (!enableCentralHeating)
+        {
+          enableCentralHeating = true;
+          enableCooling = true;
+        }
+      }
+      else if (HCTemp < globalRoomTemp + 3)
+      {
+        if (enableCentralHeating)
+        {
+          enableCooling = false;
+          enableCentralHeating = false;
+        }
+      }
+
+      unsigned long resp1 = ot.setBoilerStatus(enableCentralHeating, enableHotWater, enableCooling, enableOTCCompensation);
 
       isFlame = ot.isFlameOn(resp1);
 
@@ -320,7 +346,7 @@ void communicateBoiler()
       // boilerRoomTemp = globalRoomTemp;
       // setRoomTemp = ot.sendRequest(ot.buildRequest(OpenThermMessageType::WRITE_DATA, OpenThermMessageID::Tr, data));
       // msgTypeRoomTemp = (setRoomTemp << 1) >> 29;
-      
+
       gasCrash = ot.getFault();
       } else {
       initOpenTherm();
@@ -429,7 +455,7 @@ int AnalogReadTrueRMS(adc1_channel_t pin, int iter = 50, int timeout = 1) {
     val += curr * curr;
     delay(timeout);
   }
-  
+
   return sqrt(val / iter);
 }
 
@@ -461,7 +487,7 @@ void IRAM_ATTR set_flag()
 {
   portENTER_CRITICAL(&timerMux);
   run_now = true;
-  portEXIT_CRITICAL(&timerMux); 
+  portEXIT_CRITICAL(&timerMux);
 }
 
 void collect_and_send()
@@ -469,7 +495,7 @@ void collect_and_send()
   pin6 = (double)AnalogReadAvg(ADC1_CHANNEL_0) * 0.000805860806;
  // bool ten_status = digitalRead(TEN);
   unsigned long now = millis() / 1000;
-  
+
   double L1 = 0;
   double L2 = 0;
   double L3 = 0;
@@ -511,7 +537,7 @@ void collect_and_send()
 
   String tempInput;
 
- 
+
   double currTempOut = (double)round(Thermister(AnalogReadExtAdsTemp(0)) * 10) / 10;
   double currTempIn = (double)round(Thermister(AnalogReadExtAdsTemp(2)) * 10) / 10;
 
@@ -540,7 +566,10 @@ void collect_and_send()
                String("подача: <b>") + HCTemp + "°C</b> " + "\r\n" +
                String("подача, задано: <b>") + targetHCTemp + "°C</b> " + "\r\n" +
                String("модуляция пламени: <b>") + modulation + "%</b>\r\n" +
-               String("модуляция максимум: <b>") + maxModulation + "%</b>\r\n";
+               String("модуляция максимум: <b>") + maxModulation + "%</b>\r\n" +
+               String("Отопление: <b>") + enableCentralHeating + "</b>\r\n" +
+               String("Охлаждение: <b>") + enableCooling + "</b>\r\n" +
+               String("Горячая вода: <b>") + enableHotWater + "</b>\r\n";
   if(gasCrash)
     tempBoiler += "\xE2\x9B\x94" + String("<b>ВНИМАНИЕ! авария на газовом котле. Код: ") + String(gasCrash, HEX) + "</b>\r\n";
   portEXIT_CRITICAL(&openThermTimerMux);
@@ -621,19 +650,19 @@ void collect_and_send()
 
   if (httpsClient.connect(telegramAddress, 443))
   {
-    
+
     String postData, Link;
 
     timeClient.update();
 
     Link ="https://" +String(telegramAddress)+ "/bot" + botToken;
     postData = "chat_id="+chat_id;
-    
+
     if (message_id == 0)
     {
       Link += "/SendMessage";
       postData += "&disable_notification=1";
-                
+
     }
     else
     {
@@ -697,7 +726,7 @@ void collect_and_send()
       {
         message_id = 0;
       }
-    }  
+    }
   }
   else
   {
@@ -717,7 +746,7 @@ void loop() {
         communicateNow = false;
         portEXIT_CRITICAL(&openThermTimerMux);
   }
-  
+
   if (run_now && !is_pause)
   {
     digitalWrite(LED, HIGH);
@@ -728,7 +757,7 @@ void loop() {
     DEBUG_MSGLN(lastExec);
     DEBUG_MSGLN(String(ESP.getFreeHeap()));
     digitalWrite(LED, LOW);
- 
+
     portENTER_CRITICAL(&timerMux);
     run_now = false;
     portEXIT_CRITICAL(&timerMux);
@@ -744,9 +773,9 @@ void loop() {
     }
     if (Serial.available() > 0) {  //если есть доступные данные
         // считываем байт
-        String incomingByte1 = Serial.readString();     
+        String incomingByte1 = Serial.readString();
         DEBUG_MSGLN("Send to Serial2:");
-        DEBUG_MSGLN(incomingByte1); 
+        DEBUG_MSGLN(incomingByte1);
         Serial2.println(incomingByte1);
     }
   }
@@ -776,14 +805,14 @@ void initHTTPServer(){
                         message_id = 0;
                         String result = "Succeed! ";
                         HttpServer.send(200, "text/html", result);
-                        delay(1000); 
+                        delay(1000);
                     });
   /**
    * TODO
-   *  
+   *
    * HttpServer.on("/set-room-temp", handleSetTargetRoomTemp);
-   * 
-   * 
+   *
+   *
    */
 
   HttpServer.on(OTA_PATH, HTTP_GET, []()
@@ -896,7 +925,7 @@ void initTimeClient(){
     delay(2000);
     ticker++;
   }
-    
+
   struct tm *ptm = gmtime((time_t *)&epochTime);
 
   int currentYear = ptm->tm_year + 1900;
@@ -917,11 +946,11 @@ void initOpenTherm(){
     DEBUG_MSGLN("Hot Water: " + String(ot.isHotWaterActive(response) ? "on" : "off"));
     DEBUG_MSGLN("Flame: " + String(ot.isFlameOn(response) ? "on" : "off"));
 
-    ot.setBoilerTemperature(targetHCTemp);
+    ot.setBoilerTemperature(1);
     // setHCTemp = ot.sendRequest(ot.buildRequest(OpenThermMessageType::WRITE_DATA, OpenThermMessageID::TSet, data));
     // msgTypeHCTemp = (setHCTemp << 1) >> 29;
     // ot.sendRequest(ot.buildRequest(OpenThermMessageType::WRITE_DATA, OpenThermMessageID::TrSet,targetRoomTemp));
-   
+
   }
   if (responseStatus == OpenThermResponseStatus::NONE)
   {
@@ -965,14 +994,14 @@ void setup() {
 
   initEEPROM();
   initNetwork();
-  
+
   if (!MDNS.begin(host)) {
     DEBUG_MSGLN("Error setting up MDNS responder!");
     while (1) {
       delay(1000);
     }
   }
- 
+
   initHTTPServer();
   initOTA();
   initADC();
@@ -989,7 +1018,7 @@ int main()
 #if defined(USBCON)
     USBDevice.attach();
 #endif
-    setup();   
+    setup();
     for (;;)
     {
         loop();
