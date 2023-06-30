@@ -256,7 +256,7 @@ double globalRoomTemp = 24.0;
 double targetRoomTemp = 24.0;
 
  bool enableCentralHeating = false;
- bool enableHotWater = false;
+ bool enableHotWater = true;
  bool enableCooling = false;
  bool enableOTCCompensation = true;
 
@@ -287,6 +287,7 @@ void IRAM_ATTR startCommunicate()
 }
 void communicateBoiler()
 {
+   enableCentralHeating = true;
     if (responseStatus == OpenThermResponseStatus::SUCCESS)
     {
 
@@ -307,22 +308,22 @@ void communicateBoiler()
         }
       }
 
-      if (HCTemp  > globalRoomTemp + 3)
-      {
-        if (!enableCentralHeating)
-        {
-          enableCentralHeating = true;
-          enableCooling = true;
-        }
-      }
-      else if (HCTemp < globalRoomTemp + 3)
-      {
-        if (enableCentralHeating)
-        {
-          enableCooling = false;
-          enableCentralHeating = false;
-        }
-      }
+      // if (HCTemp  > globalRoomTemp + 3)
+      // {
+      //   if (!enableCentralHeating)
+      //   {
+      //     enableCentralHeating = true;
+      //     enableCooling = true;
+      //   }
+      // }
+      // else if (HCTemp < globalRoomTemp + 3)
+      // {
+      //   if (enableCentralHeating)
+      //   {
+      //     enableCooling = false;
+      //     enableCentralHeating = false;
+      //   }
+      // }
 
       unsigned long resp1 = ot.setBoilerStatus(enableCentralHeating, enableHotWater, enableCooling, enableOTCCompensation);
 
@@ -946,11 +947,10 @@ void initOpenTherm(){
     DEBUG_MSGLN("Hot Water: " + String(ot.isHotWaterActive(response) ? "on" : "off"));
     DEBUG_MSGLN("Flame: " + String(ot.isFlameOn(response) ? "on" : "off"));
 
-    ot.setBoilerTemperature(1);
+    ot.setBoilerTemperature(targetHCTemp);
     // setHCTemp = ot.sendRequest(ot.buildRequest(OpenThermMessageType::WRITE_DATA, OpenThermMessageID::TSet, data));
     // msgTypeHCTemp = (setHCTemp << 1) >> 29;
     // ot.sendRequest(ot.buildRequest(OpenThermMessageType::WRITE_DATA, OpenThermMessageID::TrSet,targetRoomTemp));
-
   }
   if (responseStatus == OpenThermResponseStatus::NONE)
   {
