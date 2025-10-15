@@ -18,6 +18,8 @@
 #include <WiFiClientSecure.h>
 #include <Wire.h>
 #include <driver/adc.h>
+#include <map>
+#include <vector>
 #include "DHT.h"
 #include "soc/rtc_wdt.h"
 
@@ -84,6 +86,16 @@ const uint addrBoilerMinTemp = addrCurrentTargetHCTemp + sizeof(double);
 const uint addrBoilerMaxTemp = addrBoilerMinTemp + sizeof(double);
 const uint EEPROMSize = addrBoilerMaxTemp;  // Общий размер
 
+struct FloorDataConfig {
+   String url;
+   String label;
+   bool is_kitchen = false;  // По умолчанию false, если не кухня
+
+   // Конструктор для удобства инициализации
+   FloorDataConfig(const String& u, const String& l, bool ik = false)
+       : url(u), label(l), is_kitchen(ik) {}
+};
+
 // --- Объявление класса ---
 class App {
   public:
@@ -102,6 +114,7 @@ class App {
    AsyncWebServer HttpServer;
 
    // --- HTTP Client ---
+   HTTPClient https;
    HTTPClient http;
 
    // Необходим для NTPClient, теперь объявлен глобально
@@ -109,6 +122,9 @@ class App {
 
    // --- Time Client ---
    NTPClient timeClient;
+
+   // --- HTTPS Client ---
+   WiFiClientSecure client;
 
    // Функции инициализации
    void initNetwork();
@@ -124,14 +140,13 @@ class App {
    DHT dht2;
 
    // --- Ticker ---
-   hw_timer_t *timer;
+   hw_timer_t* timer;
    portMUX_TYPE timerMux;
    volatile bool run_now;
    volatile bool is_pause;
-   int lastExec;
 
    // --- OpenTherm ---
-   hw_timer_t *openThermTimer;
+   hw_timer_t* openThermTimer;
    portMUX_TYPE openThermTimerMux;
    OpenTherm ot;
    OpenThermResponseStatus responseStatus;
@@ -177,20 +192,26 @@ class App {
    // ADC Variables
    double pin1, pin2, pin3, pin4, pin5, pin6;
 
+   // --- Константы ---
+   static const String TELEGRAM_MESSAGE_SEPARATOR;
+
+   // Структура этажей
+   std::vector<FloorDataConfig> floorConfigs;
+
    // --- Private Methods ---
    // OpenTherm
    void IRAM_ATTR startCommunicate();
    void communicateBoiler();
 
    // Web Server
-   void handleNotFound(AsyncWebServerRequest *request);
-   void handlePause(AsyncWebServerRequest *request);
-   void handleReboot(AsyncWebServerRequest *request);
-   void handleGetMainStatus(AsyncWebServerRequest *request);
-   void handleSetTargetRoomTemp(AsyncWebServerRequest *request, uint8_t *data,
+   void handleNotFound(AsyncWebServerRequest* request);
+   void handlePause(AsyncWebServerRequest* request);
+   void handleReboot(AsyncWebServerRequest* request);
+   void handleGetMainStatus(AsyncWebServerRequest* request);
+   void handleSetTargetRoomTemp(AsyncWebServerRequest* request, uint8_t* data,
                                 size_t len, size_t index, size_t total);
-   void handleUpload(AsyncWebServerRequest *request, String filename,
-                     size_t index, uint8_t *data, size_t len, bool final);
+   void handleUpload(AsyncWebServerRequest* request, String filename,
+                     size_t index, uint8_t* data, size_t len, bool final);
 
    // ADC
    int AnalogRead(int pin, int iter = 50, int timeout = 1);
@@ -208,9 +229,19 @@ class App {
    void IRAM_ATTR setFlag();
 
    // Telegram
+   void collectData(String& tempOutput, String& tempStreet, String& tempInput,
+                    String& tempBoiler, String& tempFloors);
+   String buildTelegramMessageText(const String& tempOutput,
+                                   const String& tempStreet,
+                                   const String& tempInput,
+                                   const String& tempBoiler,
+                                   const String& tempFloors);
+   String buildTelegramRequest(const String& messageText);
+   String sendTelegramRequest(const String& request);
+   void processTelegramResponse(const String& response);
    void collectAndSend();
    String getHeatCarrierData();
-   String getSensorData(DHT &dh, String title);
+   String getSensorData(DHT& dh, String title);
    String getVoltageData();
    String getBoilerData();
    String getFloorData(String url, String title);
@@ -220,6 +251,13 @@ class App {
    void one_blink();
    void two_blink();
    void three_blink();
+
+   // EEPROM
+   void saveMessageIdToEEPROM();
+
+   // --- Метрики времени выполнения ---
+   std::map<String, unsigned long> execution_times;
+   void recordExecutionTime(const String& methodName, unsigned long startTime);
 };
 
 // --- Статические функции для ISR ---
